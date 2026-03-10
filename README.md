@@ -27,6 +27,36 @@ cd collec-science
 git clone https://github.com/collec-science/multi-instances.git
 ```
 
+### Schedule the execution of automatic mails
+
+Every day, databases must be processed to extract the list of samples that are about to expire or events that are scheduled.
+
+To schedule the script:
+
+```bash
+line="0 7 * * * /var/local/collec-science/multi-instances/generateCollectionsMailsAllInstances.sh"
+echo $line | crontab -u www-data -
+```
+
+## Update
+
+To update all instances when a release is published:
+
+- Ensure that you have a full databases backup!
+- get the last version of the app:
+
+```bash
+cd /var/www/collec2App/collec-science
+git pull origin main
+```
+
+- update the databases:
+
+```bash
+/var/local/collec-science/multi-instances/updateAllDb.sh
+```
+
+
 ## Precautions for use
 
 Before performing any operation, ensure that you have backups of your databases and server configuration. To back up your databases, I highly recommend using [pgbackrest](https://pgbackrest.org/).
