@@ -16,6 +16,10 @@ CURRENT="${PWD}"
 REPOSITORY="/var/local/collec-science/multi-instances" # validate its correct
 INSTANCES="$REPOSITORY/instances.csv"
 
+SSL_CERT_FILE="/etc/ssl/certs/collec_ZZZ.crt"
+SSL_CERT_KEY_FILE="/etc/ssl/private/collec_ZZZ.key"
+SSL_CERT_CHAIN_FILE="/etc/ssl/certs/ZZZ.crt"
+
 # gestion des parametres
 OK=0
 while [ $OK == 0 ]
@@ -128,6 +132,13 @@ sed -i "s/envPath \/var\/www\/collec2App\/collec-science/envPath \/var\/www\/col
 sed -i "s/collec.mysociety.com/$URL/" $VHOSTNAME
 sed -i "s/collec-access.log/$INSTANCE-access.log/" $VHOSTNAME
 sed -i "s/collec-error.log/$INSTANCE-error.log/" $VHOSTNAME
+
+sed -i \
+  -e "s#/etc/ssl/certs/collec_science_inrae_fr_cert\.cer#$SSL_CERT_FILE#g" \
+  -e "s#/etc/ssl/certs/cert_collec_science_inrae_fr\.key#$SSL_CERT_KEY_FILE#g" \
+  -e "s#/etc/ssl/certs/certificats_chain_sectigo\.cer#$SSL_CERT_CHAIN_FILE#g" \
+  "$VHOSTNAME"
+  
 a2ensite collec2-$INSTANCE.conf
 
 # add directory site to manage rights (only one time)
@@ -138,7 +149,7 @@ fi
 
 # Add the instance in the instances.csv file
 if [ ! -e $INSTANCES ]; then
-    cp $DIRECTORY/instances-dist.csv $DIRECTORY/instances.csv
+    cp $REPOSITORY/instances-dist.csv $REPOSITORY/instances.csv
 fi
 
 echo "$INSTANCE;localhost;$DATABASE;$LOGIN;$PASSWORD;" >> $INSTANCES
