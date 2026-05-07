@@ -10,15 +10,15 @@ fi
 #
 
 # Create a new instance
-RACINE="/var/www/collec2App/"
+RACINE="/var/www/collec2App/" #/var/www/collec2App/collec-science/ #where code is 
 RACINESED="\/var\/www\/collec2App\/"
 CURRENT="${PWD}"
 REPOSITORY="/var/local/collec-science/multi-instances" # validate its correct
 INSTANCES="$REPOSITORY/instances.csv"
 
-SSL_CERT_FILE="/etc/ssl/certs/collec_ZZZ.crt"
-SSL_CERT_KEY_FILE="/etc/ssl/private/collec_ZZZ.key"
-SSL_CERT_CHAIN_FILE="/etc/ssl/certs/ZZZ.crt"
+SSL_CERT_FILE="/etc/ssl/certs/collec_ZZZ.crt" #CHANGE
+SSL_CERT_KEY_FILE="/etc/ssl/private/collec_ZZZ.key" #CHANGE
+SSL_CERT_CHAIN_FILE="/etc/ssl/certs/ZZZ.crt" #CHANGE
 
 # gestion des parametres
 OK=0
@@ -43,7 +43,7 @@ done
 # Variables of environment
 DATABASE=collec_$INSTANCE
 LOGIN=collec #i think user must exist like non multi script before
-PASSWORD=collecPassword #can change
+PASSWORD=collecPassword #can change but must be linked to login
 URL=$INSTANCE.collec-science.inrae.fr # CHANGE
 
 echo "Create the instance $INSTANCE"
