@@ -1,16 +1,20 @@
 #!/bin/bash
+set -euo pipefail
+
+if [ "$EUID" -ne 0 ]; then
+    echo "This script must be launched as root/admin."
+    echo "Use: sudo ./create.sh"
+    exit 1
+fi
+#if instance fail create do : sudo rm -r /var/www/collec2App/collec-science/instancefailedname and sudo -u postgres psql -d postgres -c "DROP DATABASE IF EXISTS collec_instancefailedname;" DANGEROUS if bad name can erase your other instances
+#
+
 # Create a new instance
 RACINE="/var/www/collec2App/"
 RACINESED="\/var\/www\/collec2App\/"
 CURRENT="${PWD}"
-REPOSITORY="/var/local/collec-science/multi-instances"
+REPOSITORY="/var/local/collec-science/multi-instances" # validate its correct
 INSTANCES="$REPOSITORY/instances.csv"
-
-# Variables of environment
-DATABASE=collec_$INSTANCE
-LOGIN=collec
-PASSWORD=collecPassword
-URL=$INSTANCE.collec-science.inrae.fr
 
 # gestion des parametres
 OK=0
@@ -18,7 +22,7 @@ while [ $OK == 0 ]
 do
     read -p "Name of the instance to be created: " INSTANCE
     read -p "Identification mode (CAS, CAS-BDD, BDD, HEADER) : " IDENTMODE
-    read -p "First admin login: " LOGINADMIN
+    read -p "First admin login (can't be admin): " LOGINADMIN
     echo "Name of the instance: "$INSTANCE
     echo "Identification mode: "$IDENTMODE
     echo "Administrator login: "$LOGINADMIN
@@ -32,7 +36,48 @@ do
     fi
 done
 
+# Variables of environment
+DATABASE=collec_$INSTANCE
+LOGIN=collec #i think user must exist like non multi script before
+PASSWORD=collecPassword #can change
+URL=$INSTANCE.collec-science.inrae.fr # CHANGE
+
 echo "Create the instance $INSTANCE"
+
+echo "Create the database"
+DBSCRIPT="$REPOSITORY/libs/createDatabase.sql"
+TMPDBSCRIPT="$(mktemp)"
+
+sed -e "s/__DBNAME__/$DATABASE/g" \
+    -e "s/__DBUSER__/$LOGIN/g" \
+    -e "s/__DBPASS__/$PASSWORD/g" \
+    "$DBSCRIPT" > "$TMPDBSCRIPT"
+
+# allow only postgres to read it
+setfacl -m u:postgres:r "$TMPDBSCRIPT"
+sudo -u postgres psql -v ON_ERROR_STOP=1 -f "$TMPDBSCRIPT"
+setfacl -b "$TMPDBSCRIPT" || true
+rm "$TMPDBSCRIPT"
+
+ADDRESS="postgresql://$LOGIN:$PASSWORD@localhost/$DATABASE"
+
+# add the first account with admin rights
+if [ "$IDENTMODE" == "HEADER" ]
+then
+    HEADER_SQL="insert into gacl.logingestion (login, actif) values ('$LOGINADMIN', 1);"
+else
+    HEADER_SQL=""
+fi
+
+psql "$ADDRESS" -v ON_ERROR_STOP=1 -1 <<SQL
+insert into gacl.acllogin (login,logindetail) values ('$LOGINADMIN','administrator');
+insert into gacl.acllogingroup (acllogin_id, aclgroup_id) values (2,1);
+$HEADER_SQL
+update col.dbparam set dbparam_value = '$INSTANCE' where dbparam_name = 'APPLI_code';
+update col.dbparam set dbparam_value = 'Collec-Science - $INSTANCE' where dbparam_name = 'otp_issuer' or dbparam_name = 'APPLI_title';
+SQL
+
+echo "Create the folder and files"
 ENV="$RACINE/env"
 FOLDER="$RACINE$INSTANCE"
 FOLDERSED="$RACINESED$INSTANCE"
@@ -43,9 +88,13 @@ mkdir temp
 chmod g+w temp
 
 # Create the keys of encryption
-openssl genpkey -algorithm rsa -out id_collec -pkeyopt rsa_keygen_bits:2048
-openssl rsa -in id_collec -pubout -out id_collec.pub
-chmod 640 id_collec
+KEY_BASENAME="id_collec_${INSTANCE}"
+PRIVATE_KEY_FILE="${KEY_BASENAME}"
+PUBLIC_KEY_FILE="${KEY_BASENAME}.pub"
+
+openssl genpkey -algorithm rsa -out "$PRIVATE_KEY_FILE" -pkeyopt rsa_keygen_bits:2048
+openssl rsa -in "$PRIVATE_KEY_FILE" -pubout -out "$PUBLIC_KEY_FILE"
+chmod 640 "$PRIVATE_KEY_FILE"
 
 # Update parameters of environment
 cp $ENV .env
@@ -59,12 +108,15 @@ sed -i "s/\#TEMP for multinstance/TEMP = \"$FOLDERSED\/temp\/\"/" .env
 sed -i "s/id_collec/$FOLDERSED\/id_collec/" .env
 sed -i "s/database.default.password = collecPassword/database.default.password = $PASSWORD/" .env
 
+sed -i "s#\(\${BASE_DIR}/\)id_collec\.pub#\1${KEY_BASENAME}.pub#g" .env
+sed -i "s#\(\${BASE_DIR}/\)id_collec#\1${KEY_BASENAME}#g" .env
+
 # Update rights in directories
 chgrp -R www-data $FOLDER
 chmod 770 $FOLDER/temp
 
 # Generate Apache virtual host
-if [ $MODE == "HEADER" ] ;
+if [ $IDENTMODE == "HEADER" ] ;
 then
     VHOST="$REPOSITORY/libs/collec2-header.conf"
 else
@@ -83,32 +135,6 @@ if [ ! -e /etc/apache2/sites-enabled/collecdirectory.conf ]; then
     cp $REPOSITORY/collecdirectory.conf /etc/apache2/sites-available/
     a2ensite collecdirectory.conf
 fi
-
-echo "Create the database"
-DBSCRIPT="$REPOSITORY/libs/createDatabase.sql"
-sed -i "s/dbcollec/$DATABASE/" $DBSCRIPT
-su postgres -c "psql -f $DBSCRIPT"
-sed -i "s/$DATABASE/dbcollec/" $DBSCRIPT
-
-# add the first account with admin rights
-
-SQL="insert into gacl.acllogin (login,logindetail) values ('$LOGINADMIN','administrator')"
-ADDRESS=postgresql://$LOGIN:$PASSWORD@localhost/$DATABASE
-psql $ADDRESS -c "$SQL"
-SQL="insert into gacl.acllogingroup (acllogin_id, aclgroup_id) values (2,1)"
-psql $ADDRESS -c "$SQL"
-
-if [ $IDENTMODE == "HEADER" ]
-then
-    SQL="insert into gacl.logingestion (login, actif) values ('$LOGINADMIN', 1)"
-    psql $ADDRESS -c "$SQL"
-fi
-
-# update parameters in dbparam
-SQL="update col.dbparam set dbparam_value = '$INSTANCE' where dbparam_name = 'APPLI_code';"
-psql $ADDRESS -c "$SQL"
-SQL="update col.dbparam set dbparam_value = 'Collec-Science - $INSTANCE' where dbparam_name = 'otp_issuer' or dbparam_name = 'APPLI_title';"
-psql $ADDRESS -c "$SQL"
 
 # Add the instance in the instances.csv file
 if [ ! -e $INSTANCES ]; then
