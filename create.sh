@@ -102,6 +102,7 @@ chmod 640 "$PRIVATE_KEY_FILE"
 
 # Update parameters of environment
 cp $ENV .env
+chmod 640 .env
 
 sed -i "s/https:\/\/collec.mysociety.com/https:\/\/$URL/" .env
 sed -i "s/database.default.database = collec/database.default.database = $DATABASE/" .env
